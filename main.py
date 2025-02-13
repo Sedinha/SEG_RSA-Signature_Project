@@ -1,17 +1,15 @@
-from rsa_core import RSACore
-from rsaes_oaep import OAEP
-from rsa_signature import RSASignature
+from src.rsa_core import RSACore
+from src.primes import generate_prime_number
+from src.rsaes_oaep import OAEP
+from src.rsa_signature import RSASignature
 import base64
 
 
 def main():
     """Demonstration of RSA encryption, decryption, signing, and verification"""
     try:
-        # Ask for hash algorithm
-        hash_algorithm = input("Enter the hash algorithm to use (SHA1, SHA256, SHA512): ").strip()
-
         # Key generation
-        rsa = RSACore(bits=2048)
+        rsa = RSACore(bits=4096)
         print("Generating RSA keys...")
         pub_key, priv_key = rsa.generate_keypair()
         print(f"RSA public key:{pub_key}")
@@ -24,34 +22,33 @@ def main():
         M = b"552"
         label = b"Certificado"
 
-        rsa_signature = RSASignature(hash_algorithm)
-        print(f"Hash algorithm: {hash_algorithm}")
+        rsa_signature = RSASignature()
         # Assinatura da mensagem
-        signature = rsa_signature.sign(M, signing_priv_key)
-        print(f"Signature: {signature}")
+        signature_hash = rsa_signature.sign(M, signing_priv_key)
+        print(f"Signature: {signature_hash}")
         # Concatenar mensagem e assinatura
+        signature_bytes = base64.b64decode(signature_hash)
 
-        combined_message = M + base64Signature
+        combined_message = M + signature_bytes
         print(f"Combined message: {combined_message}")
 
-        # Calculate n_len from the public key, the n_len is the length in octets of the RSA modulus n
+        # Calculate n_len from the public key, the n_len is the length in octets of the RSA modulus n = k
         n_len = (pub_key[1].bit_length() + 7) // 8  # pub_key[1] is the modulus n
         print(f"n_len: {n_len}")
         # Encryption with RSAES-OAEP using the chosen hash algorithm
-        oaep = OAEP(n_len, rsa_core=rsa, hash_algorithm=hash_algorithm)
+        oaep = OAEP(n_len, rsa_core=rsa)
+        print("PRBMELMAMSDMAS")
         encrypted = oaep.rsaes_oaep_encrypt(pub_key, combined_message, label)
-
-        print("Ciphertext:", encrypted.hex())
 
         # Decryption with RSAES-OAEP using the chosen hash algorithm
         decrypted_combined = oaep.rsaes_oaep_decrypt(priv_key, encrypted, label)
 
         # Separar mensagem e assinatura
         decrypted_message = decrypted_combined[:len(M)]
-        decrypted_signature = base64.b64encode(decrypted_combined[len(M):])
+        decrypted_signature_hash = base64.b64encode(decrypted_combined[len(M):])
 
         # Verificação da assinatura
-        is_valid = rsa_signature.verify(decrypted_message, decrypted_signature, signing_pub_key, hash_algorithm=hash_algorithm)
+        is_valid = rsa_signature.verify(decrypted_message, decrypted_signature_hash, signing_pub_key)
 
         # Output results
         print(f"Original message: {M}")

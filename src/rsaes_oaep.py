@@ -1,166 +1,128 @@
 
 import os
 from hashlib import sha1,sha224,sha256
-from data_conversion import i2osp, os2ip
+from src.primitives import i2osp, os2ip, mgf1,sha256
 class OAEP: #OAEP Padding
-    def __init__(self, n_len, rsa_core,hash_algorithm='sha1'):
+    def __init__(self, n_len, rsa_core):
         """Initialize OAEP parameters
         n_len: length in octets of the RSA modulus n
         rsa_core: instance of the RSACore class
         hash_algorithm: the hash function to be used (sha1, sha224, sha256)
         """
-        self.hash_algorithm = hash_algorithm.lower()
-        self.hash_func, self.hLen, self.empty_lHash = self._select_hash_function(hash_algorithm)
-        self.n_len = n_len  # Size of RSA modulus in bytes
+        self.k = n_len  # Size of RSA modulus in bytes
         self.L = b""  # Default empty label
         self.rsa_core = rsa_core
-    
-    def _select_hash_function(self, hash_algorithm):
-        """Select hash function based on the algorithm name"""
-        if hash_algorithm == "sha1":
-            return sha1, 20, bytes.fromhex("da39a3ee5e6b4b0d3255bfef95601890afd80709")
-        elif hash_algorithm == "sha224":
-            return sha224, 28, bytes.fromhex("d14a028c2a3a2bc9476102bb288234c415a2b01f828ea62ac5b3e42f")
-        elif hash_algorithm == "sha256":
-            return sha256, 32, bytes.fromhex("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
-        else:
-            raise ValueError("unsupported hash function")
 
-    def _mgf1(self, seed, length):
-        """Mask Generation Function based on SHA3-256"""
-        if length > (2 ** 32) * self.hLen:
-            raise ValueError("Mask too long")
-
-        result = b''
-        counter = 0
-
-        while len(result) < length:
-            C = i2osp(counter, 4)
-            result += self.hash_func(seed + C).digest()
-            counter += 1
-
-        return result[:length]
-
-    def encode(self, message, L=None):
-        """EME-OAEP encoding (Section 7.1.1)
-        message (M): an octet string to be encoded
-        L: optional label, an octet string
-        Return encoded message (EM), an octet string
+    def rsaes_oaep_encrypt(self, public_key, M, L=b''):
         """
-        mLen = len(message)
-
-        lHash = self.hash_func(L).digest()
-
-        PS = b'\x00' * (self.n_len - mLen - 2 * self.hLen - 2)
-        # Create data block
-        DB = lHash + PS + b'\x01' + message
-
-        # Generate random seed
-        seed = os.urandom(self.hLen)
-
-        # Generate masks
-        dbMask = self._mgf1(seed, self.n_len - self.hLen - 1)
-        maskedDB = bytes(a ^ b for a, b in zip(DB, dbMask))
-
-        seedMask = self._mgf1(maskedDB, self.hLen)
-        maskedSeed = bytes(a ^ b for a, b in zip(seed, seedMask))
-
-        # Concatenate everything
-        return b'\x00' + maskedSeed + maskedDB
-
-    def decode(self, EM, L=None):
-        """EME-OAEP decoding (Section 7.1.2)
-        EM: encoded message, an octet string
-        L: optional label, an octet string
-        Return decoded message (M), an octet string"""
-
-        lHash = self.hash_func(L).digest()
-        Y = EM[0]
-        maskedSeed = EM[1:self.hLen + 1]
-        maskedDB = EM[self.hLen + 1:]
-
-        # Recover seed
-        seedMask = self._mgf1(maskedDB, self.hLen)
-        seed = bytes(a ^ b for a, b in zip(maskedSeed, seedMask))
-
-        # Recover data block
-        dbMask = self._mgf1(seed, self.n_len - self.hLen - 1)
-        DB = bytes(a ^ b for a, b in zip(maskedDB, dbMask))
-
-        lHash_prime = DB[:self.hLen]
-        if not self._constant_time_compare(lHash, lHash_prime):
-            raise ValueError("decryption error")
-
-        # Find message boundary
-        i = self.hLen
-        while i < len(DB):
-            if DB[i] == 0x01:
-                break
-            elif DB[i] != 0x00:
-                raise ValueError("decryption error")
-            i += 1
-
-        if i == len(DB) or Y != 0:
-            raise ValueError("decryption error")
-
-        return DB[i + 1:]
-
-    def _constant_time_compare(self, a, b):
-        """Constant-time comparison of two strings"""
-        if len(a) != len(b):
-            return False
-        return sum(x != y for x, y in zip(a, b)) == 0
-
-    def rsaes_oaep_encrypt(self, public_key, message, label=None):
-        """
-        RSAES-OAEP-ENCRYPT operation.
+        RSAES-OAEP-ENCRYPT((n, e), M, P) operation.
         public_key: (n, e) tuple
         message (M): an octet string to be encrypted
         label (L): optional label, an octet string
         Return ciphertext (C), an octet string
-        """
-        # Length checking
-        L = label if label is not None else self.empty_lHash
-        mLen = len(message)
-        if len(L) > (2 ** 61 - 1):
-            raise ValueError("label too long")
 
-        k = self.n_len
-        if mLen > k - 2 * self.hLen - 2:
-            raise ValueError("message too long")
-        
+        Input:
+        1.  Public Key - (e, n) recipients RSA public key
+        2.  M - message to be encrypted, an octet string of length at most k - 2 - 2*hLen, where k is the length in 
+        octets of the modulus n and hLen is the length in octets of the hash function output for EME-OAEP.
+        3.  L -  encoding parameters, an octet string that may be empty
+    Output:
+         1. C - ciphertext, an octet string of length k
+    Errors: 1. message too long
+    Assumption: public key (n, e) is valid
+        """
         # EME-OAEP encoding
-        EM = self.encode(message, L)
+        EM = self.encode(M,self.k, L)
+        print(f"EM Length: {len(EM)}, k (modulus size): {self.k}")
+
 
         # Convert EM to an integer message representative m
         m = os2ip(EM)
-
+        print(f"m: {m}")
         # Apply the RSAEP encryption primitive
         c = self.rsa_core.rsaep(public_key, m)
+        print(f"c: {c}")
 
         # Convert the ciphertext representative c to a ciphertext C
-        C = i2osp(c, k)
+        C = i2osp(c, self.k)
+        print(f"C: {C}")
 
         return C
 
-    def rsaes_oaep_decrypt(self, private_key, ciphertext, label=None):
+    def encode(self, M,emLen, L=b'', hash=sha256, mgf=mgf1) -> bytes:
+        """EME-OAEP encoding operation'(Section 7.1.1)
+        message (M): an octet string to be encoded
+        L: optional label, an octet string
+        Return encoded message (EM), an octet string
+
+        Inputs:
+            - M: message to be encoded, an octet string of length at most (emLen - 1 - 2hLen)
+            (mLen denotes the length in octets of the message)  
+            - L: Encoding Parameters, an octet string
+            -emLen: intended length in octets of the encoded message, at least 2hLen + 1
+        Options: 
+            - Hash hash function (hLen denotes the length in octets of the hash function output)
+            - MGF mask generation function
+        Output:
+            - EM: encoded message, an octet string of length emLen
+        Exceptions:
+            -Message too long; Parameter string too long
         """
-        RSAES-OAEP-DECRYPT operation.
-        private_key: (n, d) tuple
+        # 1. If the length of L(lebal) is greater than the input limitation then output ‘‘encoding error’’ and stop.
+        # SHA1: 2^61 - 1
+        #if len(L) > (pow(2, 61) - 1):
+        #     raise ValueError("Encoding error, parameter too large")
+        # 1. If the length of L is greater than the input limitation for the hash function
+        # (2^61 - 1 octets for SHA-1) then output ‘Encoding error, parameter too large’ and stops.
+        M = M
+        mLen = len(M)
+
+        lHash = hash(L)
+        hLen = len(lHash)
+        # PADDING 
+        zero_octet = b'\x00'
+        PS = zero_octet * (emLen - mLen - 2 * hLen - 2)
+        # Create data block
+        DB = lHash + PS + b'\x01' + M
+
+        # Generate random seed 
+        seed = os.urandom(hLen)
+
+        # Generate masks
+        dbMask = mgf(seed, emLen - hLen - 1)
+        maskedDB = bytes(a ^ b for a, b in zip(DB, dbMask)) #Xor
+
+        seedMask = mgf(maskedDB, hLen)
+        maskedSeed = bytes(a ^ b for a, b in zip(seed, seedMask))
+        # Concatenate everything
+        EM = maskedSeed + maskedDB
+        #  return EM
+        return  EM
+
+    def rsaes_oaep_decrypt(self, private_key, ciphertext, L=b''):
+        """
+        RSAES-OAEP-DECRYPT(K, C, P) operation.
         ciphertext (C): an octet string to be decrypted
         label (L): optional label, an octet string
         Return decrypted message (M), an octet string
-        """
-        # Length checking
-        L = label if label is not None else self.empty_lHash
-        k = self.n_len
-        if len(L) > (2 ** 61 - 1):
-            raise ValueError("decryption error")
-        if len(ciphertext) != k:
-            raise ValueError("decryption error")
-        if k < 2 * self.hLen + 2:
-            raise ValueError("decryption error")
 
+        Inputs: 
+            1. K - recipients RSA private_key: (n, d) tuple
+            2. C - ciphertext to be decrypted, an octet string of length k
+            3. L - encoding parameters, an octet string that may be empty
+
+        Output:
+            1. M -  message, an octet string of length at most k - 2 - 2hLen, where hLen is the length in octets
+            of the hash function output for EME-OAEP
+        Errors:
+            1. Decryption error
+
+        """
+        cLen = len(ciphertext)
+        # 1. If the length of the ciphertext C is not k octets, output decryption error and stop.
+        if cLen != self.k:
+            raise ValueError("Decryption error")
+        
         # Convert the ciphertext C to an integer ciphertext representative c
         c = os2ip(ciphertext)
 
@@ -168,12 +130,60 @@ class OAEP: #OAEP Padding
         m = self.rsa_core.rsadp(private_key, c)
 
         # Convert the message representative m to an encoded message EM
-        EM = i2osp(m, k)
+        EM = i2osp(m, self.k)
 
         # EME-OAEP decoding
         try:
-            message = self.decode(EM, L)
+            M = self.decode(EM, L)
         except ValueError:
             raise ValueError("Descryption error")
+        # Output the message M
+        return M
 
-        return message
+    def decode(self, EM, L=b'', hash=sha256, mgf=mgf1) -> bytes:
+        """EME-OAEP-decoding(EM, P)(Section 7.1.2)
+        EM: encoded message, an octet string
+        L: optional label, an octet string
+        Return decoded message (M), an octet string
+        
+        Options: 
+            1. Hash - hash function (hLen denotes the length in octets of the hash function output)
+            2. MGF - mask generation function
+        Input: 
+            1. EM - encoded message, an octet string of length at least 2hLen + 1 (emLen denotes the length in
+            octets of EM)
+            2. L - Encoding parameters, an octet string
+        Output:
+            1. M - recovered message, an octet string of length at most emLen - 1 - 2hLen
+
+        Errors:
+            1. Decoding error
+        
+        """
+
+        # 1. If the length of L(lebal) is greater than the input limitation then output ‘‘decoding error’’ and stop.
+        # SHA1: 2^61 - 1
+        if len(L) > (pow(2, 61) - 1):
+            raise ValueError("Decoding error, parameter too large")
+        emLen = len(EM)
+        lHash = hash(L)
+        hLen = len(lHash)
+        Y = EM[0]
+        maskedSeed = EM[0:hLen]
+        maskedDB = EM[hLen + 1:-1]
+
+        # Recover seed
+        seedMask = mgf(maskedDB, hLen)
+        seed = bytes(a ^ b for a, b in zip(maskedSeed, seedMask))
+
+        # Recover data block
+        dbMask = mgf(seed, emLen - hLen)
+        DB = bytes(a ^ b for a, b in zip(maskedDB, dbMask))
+
+        # Let pHash = Hash(L), an octet string of length hLen.
+        index = DB.find(b'\x01') 
+        if DB[:hLen] != lHash:
+            raise ValueError("Hash not in DB")
+        # Separate DB into an octet string pHash’ || PS || 01 || M
+        # 10. return m
+        return DB[index:]

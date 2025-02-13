@@ -1,66 +1,28 @@
 import random
+import math
 from hashlib import sha3_256
+from src.primes import generate_prime_number
+from src.utils import bit_len
 class RSACore:
-    def __init__(self, bits=2048, public_exponent=65537):
+    def __init__(self, bits=4096, public_exponent=None):
         """
         Initialize RSA parameters with specified bit length and public exponent.
         bits: length in bits of the RSA modulus n
         public_exponent: RSA public exponent (e)
         """
-        self.bits = bits
-        self.e = public_exponent  # Commonly used public exponent
+        self.bits = bits #size of primes in bits
+        self.public_exponent = public_exponent #public exponent
 
-    #
-    def generate_prime_candidate(self):  # Generate a random prime candidate with specified bit length
-        # Generate random odd integer of specified bits
-        #Return a candidate prime number (r_i)
-        candidate = random.getrandbits(self.bits)
-        candidate |= (1 << self.bits - 1) | 1  # Set MSB and LSB to 1
-        return candidate
-
-    def miller_rabin_test(self, n, k=128):
-        """
-        Perform Miller-Rabin primality test on the given number n with k iterations.
-        n: number to be tested for primality
-        k: number of iterations for accuracy
-        Return True if n is probably prime, False otherwise
-        """
-        if n == 2 or n == 3:
-            return True
-        if n < 2 or n % 2 == 0:
-            return False
-
-        # Write n as 2^r * d + 1
-        r, d = 0, n - 1
-        while d % 2 == 0:
-            r += 1
-            d //= 2
-
-        # Witness loop
-        for _ in range(k):
-            a = random.randrange(2, n - 2)
-            x = pow(a, d, n)
-            if x == 1 or x == n - 1:
-                continue
-            for _ in range(r - 1):
-                x = (x * x) % n
-                if x == 1:
-                    return False
-                if x == n - 1:
-                    break
-            else:
-                return False
-        return True
-
-    def generate_prime_number(self):
-        """
-        Generate a prime number using the Miller-Rabin test.
-        Return a prime number (r_i)
+    def __generate_e(self, phi, n):
+        """ 
+        Generate a value for e
+        1) 2 < e < phi(n)
+        2) has to be co-prime with n and phi(n)
         """
         while True:
-            prime_candidate = self.generate_prime_candidate()
-            if self.miller_rabin_test(prime_candidate):
-                return prime_candidate
+            e = random.randrange(2**(self.bits - 1), 2**(self.bits))
+            if math.gcd(e, phi) == 1 and math.gcd(e, n) == 1:
+                return e
 
     def generate_keypair(self):
         """
@@ -71,14 +33,18 @@ class RSACore:
         Return (public_key, private_key)
         """
         print("Generating p...")
-        p = self.generate_prime_number()
+        p = generate_prime_number()
         print("Generating q...")
-        q = self.generate_prime_number()
-
+        q = generate_prime_number(other_b_len=bit_len(p))
         n = p * q
         phi = (p - 1) * (q - 1)
-
+        # Generate e if not provided
+        if self.public_exponent is None:
+            self.e = self.__generate_e(phi, n)
+        else:
+            self.e = self.public_exponent
         # Calculate private key
+
         d = pow(self.e, -1, phi)
 
         private_key = (d, n)

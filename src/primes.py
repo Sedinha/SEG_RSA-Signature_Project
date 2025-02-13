@@ -1,0 +1,149 @@
+import random
+def get_small_primes(number):
+    """Get small primes using Sieve of Eratosthenes algorithm. 
+        Return a list with primes smaller than or equal to number. It is also given that n is a small number.
+    """
+        # list of primes up to number
+    list_of_primes = []       
+
+    # Create a boolean array "prime[0..n]" and initialize  all entries it as true:
+
+    prime = [True for i in range(number+1)]
+        # first prime
+    p = 2
+
+
+        # algorithm:
+    while p * p <= number:
+        if prime[p] == True:
+        # Update all multiples of p
+            for i in range(p * p, number+1, p):
+                prime[i] = False
+        p+=1
+        # return list of prim
+        # es
+    for i in range(number):
+
+        if prime[i] == True:
+            list_of_primes.append(i)        
+
+    return list_of_primes[2:]
+
+list_of_primes = get_small_primes(1000)
+
+def get_prime(bits):
+    """
+    Generate a prime number using the Miller-Rabin test.
+    Return a prime number (r_i)
+    """
+    while True:
+        prime_candidate = __get_low_level_prime(list_of_primes,bits=bits)
+        if __miller_rabin_test(prime_candidate,k=20):
+            return prime_candidate
+        
+def __get_low_level_prime(list_of_primes, bits=1024):
+    """
+            The prime candidate is divided by the pre-generated primes to check for divisibility.
+        Division with first primes to check for divisibility. If the Prime candidate is divisible 
+        by any of the generated primes prior, the test fails and we take a new prime.
+            This is repeated as long as a value which is coprime to all the primes in our generated
+        primes list is found.
+    """
+        # get all primes up to 100
+
+
+    while True:
+             # Obtain a random number
+        prime_candidate = __random_number(bits=bits) 
+        for divisor in list_of_primes: 
+            if prime_candidate % divisor == 0 and divisor  ** 2 <= prime_candidate:
+                break
+                # If no divisor found, return value
+            else:
+                return prime_candidate
+
+def __miller_rabin_test(n, k=10):
+    """Miller Rabin test for k iterations"""
+    for i in range(k):
+        a = random.randrange(2, n - 1)
+        if not __single_test(n, a):
+            return False
+    return True
+def __single_test(n, a):
+    """One iteration of miller rabin test"""
+    exp = n - 1
+    while not exp & 1:
+        exp >>= 1
+            
+    if pow(a, exp, n) == 1:
+        return True
+            
+    while exp < n - 1:
+        if pow(a, exp, n) == n - 1:
+            return True
+                
+        exp <<= 1
+            
+    return False
+
+def __random_number(bits):
+    """Generate number from 2^{bits-1} to 2^bits"""
+    return(random.randrange(2**(bits-1), 2**bits-1))
+
+
+
+def generate_prime_candidate(other_b_len,bits=1024):
+    # Generate random odd integer of specified bits
+    # Return a candidate prime number (r_i)
+    if not other_b_len:
+        candidate_bit_len = random.randint(17, bits)
+    else:
+        candidate_bit_len = bits - other_b_len
+
+    candidate = random.getrandbits(candidate_bit_len)
+    candidate |= (1 << candidate_bit_len - 1) | 1  # Set MSB and LSB to 1
+    return candidate
+
+def miller_rabin_test(n, k=128):
+    """
+    Perform Miller-Rabin primality test on the given number n with k iterations.
+    n: number to be tested for primality
+    k: number of iterations for accuracy
+    Return True if n is probably prime, False otherwise
+    """
+    if n == 2 or n == 3:
+        return True
+    if n < 2 or n % 2 == 0:
+        return False
+
+    # Write n as 2^r * d + 1
+    r, d = 0, n - 1
+    while d % 2 == 0:
+        r += 1
+        d //= 2
+
+    # Witness loop
+    for _ in range(k):
+        a = random.randrange(2, n - 2)
+        x = pow(a, d, n)
+        if x == 1 or x == n - 1:
+            continue
+        for _ in range(r - 1):
+            x = (x * x) % n
+            if x == 1:
+                return False
+            if x == n - 1:
+                break
+        else:
+            return False
+    return True
+
+def generate_prime_number(other_b_len=None):
+    """
+    Generate a prime number using the Miller-Rabin test.
+    Return a prime number (r_i)
+    """
+    while True:
+        prime_candidate = generate_prime_candidate(other_b_len)
+        if miller_rabin_test(prime_candidate):
+            return prime_candidate
